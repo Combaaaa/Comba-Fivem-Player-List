@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Comba Player Tracker</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+<style>
+
+*{box-sizing:border-box;}
+
+body{
+margin:0;
+font-family:'Inter',sans-serif;
+background:linear-gradient(135deg,#0f172a,#020617);
+color:white;
+}
+
+.container{
+max-width:1200px;
+margin:auto;
+padding:90px 20px 40px 20px;
+}
+
+.panel{
+background:rgba(255,255,255,0.05);
+backdrop-filter:blur(14px);
+border-radius:16px;
+padding:25px;
+margin-bottom:25px;
+box-shadow:0 10px 40px rgba(0,0,0,0.6);
+}
+
+input{
+padding:12px 14px;
+border:none;
+border-radius:10px;
+background:rgba(255,255,255,0.07);
+color:white;
+margin-right:10px;
+}
+
+button{
+padding:11px 18px;
+background:linear-gradient(90deg,#4da3ff,#3b82f6);
+color:white;
+border:none;
+border-radius:10px;
+cursor:pointer;
+font-weight:600;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+margin-top:20px;
+}
+
+th,td{
+padding:13px;
+border-bottom:1px solid rgba(255,255,255,0.08);
+text-align:left;
+}
+
+tr:hover{
+background:rgba(255,255,255,0.05);
+}
+
+.badge{
+background:#22c55e;
+color:black;
+padding:4px 10px;
+border-radius:6px;
+margin-left:10px;
+font-size:12px;
+font-weight:600;
+}
+
+.status{
+margin-top:10px;
+font-size:20px;
+font-weight:600;
+}
+
+#topFavBar{
+position:fixed;
+top:0;
+left:0;
+width:100%;
+background:rgba(15,23,42,0.9);
+padding:10px 20px;
+display:flex;
+gap:10px;
+overflow-x:auto;
+}
+
+.favItem{
+display:flex;
+align-items:center;
+gap:6px;
+}
+
+.favDelete{
+background:#ef4444;
+padding:4px 7px;
+font-size:12px;
+border-radius:6px;
+}
+
+.startscreen{
+position:fixed;
+top:0;
+left:0;
+width:100%;
+height:100%;
+background:#020617;
+display:flex;
+align-items:center;
+justify-content:center;
+flex-direction:column;
+}
+
+.startscreen button{
+font-size:22px;
+padding:16px 36px;
+border-radius:14px;
+}
+
+#scrollButtons{
+position:fixed;
+top:80px;
+right:20px;
+display:none;
+flex-direction:column;
+gap:10px;
+z-index:1000;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div id="topFavBar"></div>
+
+<div id="scrollButtons">
+<button onclick="scrollTopPage()">⬆ En Başa Dön</button>
+<button onclick="scrollHistory()">⬇ Son Giren Oyunculara Git</button>
+</div>
+
+<div class="startscreen" id="startscreen">
+<h1>Comba Player Tracker</h1>
+<button onclick="startTracker()">Başlamak İçin Tıkla</button>
+</div>
+
+<div class="container" id="mainContent" style="display:none;">
+
+<div class="panel">
+
+<input id="serverId" placeholder="Server ID / cfx.re link / servers.fivem link">
+<input id="serverName" placeholder="Favori için isim">
+
+<button onclick="loadPlayers()">Oyuncuları Yükle</button> <button onclick="refreshPlayers()">🔄 Yenile</button> <button onclick="addFavoriteServer()">★ Favori Ekle</button>
+
+<br><br>
+
+<input id="search" placeholder="Oyuncu ara..." onkeyup="filterPlayers()">
+
+<div class="status" id="status"></div>
+
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>İsim</th>
+<th>Ping</th>
+<th>Discord</th>
+<th>Steam</th>
+</tr>
+</thead>
+
+<tbody id="players"></tbody>
+</table>
+
+</div>
+
+<div class="panel" id="historyPanel">
+
+<h3>Son Giren Oyuncular</h3>
+
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>İsim</th>
+<th>Ping</th>
+</tr>
+</thead>
+
+<tbody id="historyPlayers"></tbody>
+</table>
+
+</div>
+
+</div>
+
+<script>
+
+let playersData=[];
+let favServers=[];
+let historyList=[];
+
+function extractServerId(text){
+
+if(!text) return ""
+
+text=text.trim()
+
+if(text.includes("servers/detail/")){
+text=text.split("servers/detail/")[1]
+}
+
+if(text.includes("cfx.re/join/")){
+text=text.split("cfx.re/join/")[1]
+}
+
+if(text.includes("join/")){
+text=text.split("join/")[1]
+}
+
+text=text.split("?")[0]
+text=text.replace(/\//g,"")
+text=text.toLowerCase()
+
+return text
+
+}
+
+function startTracker(){
+
+document.getElementById('startscreen').style.display='none';
+document.getElementById('mainContent').style.display='block';
+document.getElementById('scrollButtons').style.display='flex';
+
+loadFavoriteServers();
+
+}
+
+async function loadPlayers(){
+
+let serverId=document.getElementById('serverId').value.trim();
+serverId=extractServerId(serverId);
+
+if(!serverId || serverId.length<3){
+document.getElementById('status').innerText="Geçersiz server ID veya link.";
+return
+}
+
+try{
+
+const res=await fetch(`https://servers-frontend.fivem.net/api/servers/single/${serverId}`);
+
+if(!res.ok) throw new Error();
+
+const data=await res.json();
+
+playersData=data.Data.players || [];
+
+playersData.sort((a,b)=>a.id-b.id);
+
+const serverName=data.Data.hostname || "Bilinmeyen Sunucu";
+
+const playerCount=playersData.length;
+const maxPlayers=data.Data.sv_maxclients;
+
+document.getElementById('status').innerHTML=
+serverName + ` <span class="badge">${playerCount} / ${maxPlayers}</span>`;
+
+renderPlayers(playersData);
+updateHistory(playersData);
+
+}catch{
+
+document.getElementById('status').innerText="Sunucu bulunamadı.";
+
+}
+
+}
+
+function refreshPlayers(){
+loadPlayers();
+}
+
+function renderPlayers(players){
+
+const table=document.getElementById('players');
+table.innerHTML='';
+
+players.forEach(p=>{
+
+let discord='-';
+let steam='-';
+
+if(p.identifiers){
+
+const d=p.identifiers.find(i=>i.startsWith('discord:'));
+const s=p.identifiers.find(i=>i.startsWith('steam:'));
+
+if(d) discord=d.replace('discord:','');
+if(s) steam=s.replace('steam:','');
+
+}
+
+table.innerHTML+=`
+<tr>
+<td>${p.id}</td>
+<td>${p.name}</td>
+<td>${p.ping}</td>
+<td>${discord}</td>
+<td>${steam}</td>
+</tr>
+`;
+
+});
+
+}
+
+function filterPlayers(){
+
+const text=document.getElementById('search').value.toLowerCase();
+
+const filtered=playersData.filter(p=>
+p.name.toLowerCase().includes(text) ||
+String(p.id).includes(text)
+);
+
+renderPlayers(filtered);
+
+}
+
+function updateHistory(players){
+
+players.forEach(p=>{
+
+if(!historyList.some(h=>h.id===p.id)){
+historyList.unshift(p);
+}
+
+});
+
+historyList=historyList.slice(0,10);
+
+const table=document.getElementById('historyPlayers');
+table.innerHTML='';
+
+historyList.forEach(p=>{
+
+table.innerHTML+=`
+<tr>
+<td>${p.id}</td>
+<td>${p.name}</td>
+<td>${p.ping}</td>
+</tr>
+`;
+
+});
+
+}
+
+function addFavoriteServer(){
+
+let serverId=document.getElementById('serverId').value.trim();
+serverId=extractServerId(serverId);
+
+const serverName=document.getElementById('serverName').value.trim()||serverId;
+
+if(!serverId) return;
+
+if(favServers.some(s=>s.id===serverId)) return;
+
+favServers.push({id:serverId,name:serverName});
+
+localStorage.setItem('favServers',JSON.stringify(favServers));
+
+renderTopFavBar();
+
+}
+
+function deleteFavorite(id){
+
+favServers=favServers.filter(s=>s.id!==id);
+
+localStorage.setItem('favServers',JSON.stringify(favServers));
+
+renderTopFavBar();
+
+}
+
+function renderTopFavBar(){
+
+const bar=document.getElementById('topFavBar');
+bar.innerHTML='';
+
+favServers.forEach(s=>{
+
+const div=document.createElement('div');
+div.className='favItem';
+
+const btn=document.createElement('button');
+btn.innerText=s.name;
+btn.onclick=()=>{
+document.getElementById('serverId').value=s.id;
+loadPlayers();
+};
+
+const del=document.createElement('button');
+del.innerText='X';
+del.className='favDelete';
+del.onclick=()=>deleteFavorite(s.id);
+
+div.appendChild(btn);
+div.appendChild(del);
+
+bar.appendChild(div);
+
+});
+
+}
+
+function loadFavoriteServers(){
+
+try{
+favServers=JSON.parse(localStorage.getItem('favServers'))||[];
+}catch{
+favServers=[];
+}
+
+renderTopFavBar();
+
+}
+
+function scrollTopPage(){
+
+window.scrollTo({
+top:0,
+behavior:'smooth'
+});
+
+}
+
+function scrollHistory(){
+
+document.getElementById('historyPanel')
+.scrollIntoView({behavior:'smooth'});
+
+}
+
+setInterval(()=>{
+
+const serverId=document.getElementById('serverId').value.trim();
+
+if(serverId) loadPlayers();
+
+},15000);
+
+</script>
+
+</body>
+</html>
